@@ -2,11 +2,12 @@ require("dotenv").config();
 
 const { connectRabbitMQ } = require("../config/rabbitmq");
 
+const processedOrders = new Set();
+
 async function startWorker() {
     const channel = await connectRabbitMQ();
 
     const exchange = "orders.topic";
-
     const queue = "order.queue";
 
     const retryExchange = "orders.retry";
@@ -46,8 +47,11 @@ async function startWorker() {
         durable: true,
         arguments: {
             "x-message-ttl": 5000,
+
             "x-dead-letter-exchange": retryExchange,
-            "x-dead-letter-routing-key": "order.created"
+
+            // FIXED
+            "x-dead-letter-routing-key": "retry"
         }
     });
 
@@ -82,67 +86,122 @@ async function startWorker() {
     console.log("Order worker waiting...");
 
     channel.consume(queue, async (message) => {
+
         try {
+
             const order = JSON.parse(
                 message.content.toString()
             );
 
-            // Get the retry count from message headers
+            /*
+             * Check if order was already processed
+             */
+
+            if (processedOrders.has(order.orderId)) {
+
+                console.log(
+                    `Order ${order.orderId} already processed`
+                );
+
+                channel.ack(message);
+
+                return;
+            }
+
+            /*
+             * Check redelivery
+             */
+
+            console.log(
+                `Order ${order.orderId} | redelivered: ${message.fields.redelivered}`
+            );
+
+            /*
+             * Retry count
+             */
 
             const headers = message.properties.headers || {};
 
-            const retryCount = headers["x-retry-count"] || 0;
+            const retryCount =
+                headers["x-retry-count"] || 0;
 
             console.log(
                 `Processing order ${order.orderId}, attempt: ${retryCount + 1}`
             );
 
+            /*
+             * Simulate processing
+             */
+
             await new Promise(resolve =>
                 setTimeout(resolve, 2000)
             );
 
-            // Failure simulation
+            /*
+             * Failure simulation
+             */
+
             if (order.product === "fail") {
-                throw new Error("Order processing failed");
+                throw new Error(
+                    "Order processing failed"
+                );
             }
+
+            /*
+             * Processing successful
+             */
 
             console.log(
                 `Order ${order.orderId} processed successfully`
             );
 
+            /*
+             * Mark order as processed
+             */
+
+            processedOrders.add(order.orderId);
+
+            /*
+             * ACK
+             */
+
             channel.ack(message);
 
         } catch (error) {
 
-            // Get the retry count from message headers
-            
+            const headers =
+                message.properties.headers || {};
 
-            const headers = message.properties.headers || {};
-
-            const retryCount = headers["x-retry-count"] || 0;
+            const retryCount =
+                headers["x-retry-count"] || 0;
 
             console.error(
                 `Order failed. Retry count: ${retryCount}`
             );
 
+            /*
+             * Retry
+             */
+
             if (retryCount < MAX_RETRIES) {
 
-                // Increment the retry count and send the message to the retry queue
-
-                const nextRetryCount = retryCount + 1;
+                const nextRetryCount =
+                    retryCount + 1;
 
                 console.log(
                     `Sending order to retry queue. Retry: ${nextRetryCount}`
                 );
-                // Publish the message to the retry exchange with the updated retry count
+
                 channel.publish(
                     retryExchange,
                     "retry",
                     message.content,
                     {
                         persistent: true,
+
                         headers: {
-                            "x-retry-count": nextRetryCount
+                            "x-retry-count":
+                                nextRetryCount
                         }
                     }
                 );
@@ -151,11 +210,17 @@ async function startWorker() {
 
             } else {
 
+                /*
+                 * Maximum retries reached
+                 */
+
                 console.log(
                     `Maximum retries reached for order ${message.content.toString()}`
                 );
 
-                // Send the message to the dead letter exchange
+                /*
+                 * Send to DLQ through DLX
+                 */
 
                 channel.publish(
                     dlx,
@@ -163,8 +228,10 @@ async function startWorker() {
                     message.content,
                     {
                         persistent: true,
+
                         headers: {
-                            "x-retry-count": retryCount
+                            "x-retry-count":
+                                retryCount
                         }
                     }
                 );
