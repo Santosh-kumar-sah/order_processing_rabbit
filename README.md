@@ -74,13 +74,7 @@ Request body:
 }
 ```
 
-Example using `curl`:
 
-```bash
-curl -X POST http://localhost:5000/api/orders ^
-  -H "Content-Type: application/json" ^
-  -d "{\"product\":\"keyboard\",\"quantity\":1}"
-```
 
 The API publishes the order to the `orders.topic` exchange with the `order.created` routing key.
 
