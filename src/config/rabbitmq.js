@@ -5,7 +5,9 @@ let channel;
 
 async function connectRabbitMQ() {
 
-    connection = await amqp.connect(process.env.RABBITMQ_URL);
+    connection = await amqp.connect(
+        process.env.RABBITMQ_URL || "amqp://localhost:5672"
+    );
 
     channel = await connection.createChannel();
 
@@ -15,6 +17,10 @@ async function connectRabbitMQ() {
 }
 
 function getChannel() {
+    if (!channel) {
+        throw new Error("RabbitMQ channel is not connected");
+    }
+
     return channel;
 }
 
