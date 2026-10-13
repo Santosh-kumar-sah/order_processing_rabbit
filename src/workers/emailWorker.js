@@ -13,7 +13,7 @@ async function startWorker() {
         durable: true
     });
 
-    await channel.assertQueue(queue,{durable: true});
+    await channel.assertQueue(queue, { durable: true });
 
     await channel.bindQueue(
         queue,
@@ -25,9 +25,12 @@ async function startWorker() {
 
     console.log("Order worker waiting...");
 
-    channel.consume(queue, async(message) =>{
+    channel.consume(queue, async (message) => {
+        if (!message) {
+            return;
+        }
 
-        try{
+        try {
 
             const order = JSON.parse(
                 message.content.toString()
@@ -48,7 +51,7 @@ async function startWorker() {
 
             channel.ack(message);
 
-        }catch(error){
+        } catch (error) {
 
             console.error(
                 "Order processing failed:",
@@ -57,7 +60,7 @@ async function startWorker() {
 
             channel.nack(message, false, false);
         }
-    })
+    });
 
 }
 
