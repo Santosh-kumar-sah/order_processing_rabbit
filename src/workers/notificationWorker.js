@@ -23,6 +23,10 @@ async function startWorker() {
     console.log("Notification worker waiting...");
 
     channel.consume(queue, async (message) => {
+        if (!message) {
+            return;
+        }
+
         try {
             const order = JSON.parse(message.content.toString());
 
