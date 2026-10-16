@@ -87,6 +87,10 @@ async function startWorker() {
 
     channel.consume(queue, async (message) => {
 
+        if (!message) {
+            return;
+        }
+
         try {
 
             const order = JSON.parse(
